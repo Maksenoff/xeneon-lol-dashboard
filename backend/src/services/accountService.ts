@@ -30,6 +30,11 @@ export class AccountService {
     );
   }
 
+  /** Compte suivi (RIOT_ID du .env). */
+  me(riotId: { gameName: string; tagLine: string }): Promise<Account> {
+    return this.resolve(riotId.gameName, riotId.tagLine);
+  }
+
   /** Résout un Riot ID en PUUID (cache 7 j via le client) et le mémorise en base. */
   async resolve(gameName: string, tagLine: string): Promise<Account> {
     const dto = await getAccountByRiotId(this.client, this.region, gameName, tagLine);

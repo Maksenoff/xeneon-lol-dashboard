@@ -1,0 +1,4 @@
+# Fins de ligne LF dans le dépôt (évite les avertissements CRLF sous Windows)
+* text=auto eol=lf
+*.png binary
+*.icuewidget binary

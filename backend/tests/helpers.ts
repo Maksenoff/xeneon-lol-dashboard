@@ -16,6 +16,14 @@ export function jsonResponse(body: unknown, status = 200, headers: Record<string
 
 export type Route = (url: URL, init?: RequestInit) => Response | Promise<Response>;
 
+/** Faux fetch routé par URL : `handler` renvoie la réponse, ou undefined → 404. */
+export function routerFetch(handler: (url: URL) => Response | undefined) {
+  return vi.fn(async (input: string | URL | Request, _init?: RequestInit) => {
+    const url = new URL(typeof input === 'string' ? input : input instanceof URL ? input.href : input.url);
+    return handler(url) ?? jsonResponse({ status: { status_code: 404, message: 'Not Found' } }, 404);
+  });
+}
+
 /** Faux fetch : chaque appel consomme la réponse suivante de la liste. */
 export function sequenceFetch(...responses: Array<Response | (() => Response)>) {
   const queue = [...responses];

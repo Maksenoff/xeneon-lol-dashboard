@@ -29,6 +29,7 @@ async function main(): Promise<void> {
   process.on('SIGTERM', () => void shutdown('SIGTERM'));
 
   await app.listen({ host: config.host, port: config.port });
+  deps.poller.start();
   app.log.info({ dataDir: config.dataDir }, `Backend prêt sur http://${config.host}:${config.port}`);
 }
 

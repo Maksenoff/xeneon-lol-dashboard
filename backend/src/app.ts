@@ -6,8 +6,13 @@ import { HttpCache } from './riot/cache.js';
 import { RiotClient, RiotApiError } from './riot/client.js';
 import { RateLimiterRegistry } from './riot/rateLimiter.js';
 import { AccountService, AccountNotFoundError } from './services/accountService.js';
+import { MatchSyncService } from './services/matchSync.js';
+import { RankSnapshotService } from './services/rankSnapshots.js';
+import { SessionService } from './services/sessionService.js';
+import { Poller } from './services/poller.js';
 import { healthRoutes } from './routes/health.js';
 import { debugRoutes } from './routes/debug.js';
+import { sessionRoutes } from './routes/session.js';
 
 export interface AppDeps {
   config: AppConfig;
@@ -15,6 +20,10 @@ export interface AppDeps {
   cache: HttpCache;
   riot: RiotClient;
   accounts: AccountService;
+  matches: MatchSyncService;
+  ranks: RankSnapshotService;
+  sessions: SessionService;
+  poller: Poller;
 }
 
 export interface BuildAppOptions {
@@ -23,29 +32,32 @@ export interface BuildAppOptions {
   /** Injecté par les tests pour simuler Riot. */
   fetchFn?: typeof fetch;
   logger?: boolean | { level: string };
+  /** Horloge injectable (tests). */
+  now?: () => number;
 }
 
 export async function buildApp(opts: BuildAppOptions): Promise<{ app: FastifyInstance; deps: AppDeps }> {
   const app = Fastify({ logger: opts.logger ?? { level: opts.config.logLevel } });
+  const { config, db } = opts;
+  const now = opts.now ?? Date.now;
 
-  const cache = new HttpCache(opts.db);
+  const cache = new HttpCache(db, now);
   const riot = new RiotClient({
-    apiKey: opts.config.riotApiKey,
+    apiKey: config.riotApiKey,
     cache,
     limiters: new RateLimiterRegistry(),
     fetchFn: opts.fetchFn,
     logger: app.log,
   });
-  const deps: AppDeps = {
-    config: opts.config,
-    db: opts.db,
-    cache,
-    riot,
-    accounts: new AccountService(opts.db, riot, opts.config.region),
-  };
+  const accounts = new AccountService(db, riot, config.region);
+  const matches = new MatchSyncService(db, riot, config.region, app.log);
+  const ranks = new RankSnapshotService(db, riot, config.platform, now);
+  const sessions = new SessionService({ db, accounts, matches, ranks, riotId: config.riotId, logger: app.log, now });
+  const poller = new Poller({ accounts, matches, ranks, riotId: config.riotId, logger: app.log });
+  const deps: AppDeps = { config, db, cache, riot, accounts, matches, ranks, sessions, poller };
 
-  // Les widgets iCUE tournent dans QtWebEngine (Chromium 130) avec une origine non documentée :
-  // on accepte toute origine, le serveur n'écoutant que sur 127.0.0.1.
+  // Les widgets iCUE tournent dans QtWebEngine (Chromium 130) depuis file:// :
+  // on accepte toute origine, le serveur n'écoutant qu'en local.
   // Chromium peut aussi envoyer un préflight « Private Network Access » vers localhost.
   app.addHook('onRequest', async (req, reply) => {
     if (req.headers['access-control-request-private-network'] === 'true') {
@@ -69,6 +81,9 @@ export async function buildApp(opts: BuildAppOptions): Promise<{ app: FastifyIns
 
   await app.register(healthRoutes(deps), { prefix: '/api' });
   await app.register(debugRoutes(deps), { prefix: '/api/debug' });
+  await app.register(sessionRoutes(deps), { prefix: '/api/session' });
+
+  app.addHook('onClose', async () => poller.stop());
 
   return { app, deps };
 }
