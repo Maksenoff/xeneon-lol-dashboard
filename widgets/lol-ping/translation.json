@@ -1,0 +1,16 @@
+{
+  "en": {
+    "translation": {
+      "LoL Backend Ping": "LoL Backend Ping",
+      "Backend URL": "Backend URL",
+      "Connection": "Connection"
+    }
+  },
+  "fr": {
+    "translation": {
+      "LoL Backend Ping": "LoL Backend Ping",
+      "Backend URL": "Adresse du backend",
+      "Connection": "Connexion"
+    }
+  }
+}

@@ -1,0 +1,20 @@
+{
+  "author": "Maksenoff",
+  "id": "com.maksenoff.lolping",
+  "name": "LoL Backend Ping",
+  "description": "Widget de diagnostic : vérifie que le widget peut joindre le backend local LoL.",
+  "version": "0.1.4",
+  "preview_icon": "icon.svg",
+  "min_app_version": "5.47",
+  "min_framework_version": "1.0.0",
+  "os": [
+    {
+      "platform": "windows"
+    }
+  ],
+  "supported_devices": [
+    {
+      "type": "dashboard_lcd"
+    }
+  ]
+}

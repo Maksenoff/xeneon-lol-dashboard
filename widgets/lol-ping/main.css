@@ -1,0 +1,50 @@
+/* Version diagnostic : tailles en px (pas de vmin) pour exclure un viewport à 0 dans l'aperçu iCUE. */
+html, body {
+  margin: 0;
+  width: 100%;
+  height: 100%;
+  background: #000;
+  color: #fff;
+  font-family: "Segoe UI", Arial, sans-serif;
+  font-size: 20px;
+  overflow: hidden;
+}
+
+.root {
+  box-sizing: border-box;
+  height: 100%;
+  padding: 16px 24px;
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+}
+
+.steps { display: flex; gap: 8px; }
+.step {
+  padding: 2px 10px;
+  border-radius: 6px;
+  background: #5a1f22;
+  color: #fff;
+  font-size: 18px;
+  font-weight: 700;
+}
+.step.done { background: #1f6b3a; }
+/* Si cette feuille est chargée, l'étape CSS passe au vert sans JS. */
+#step-css { background: #1f6b3a; }
+
+.hero {
+  font-size: 56px;
+  font-weight: 700;
+  white-space: nowrap;
+}
+.hero[data-state="ok"] { color: #3ddc84; }
+.hero[data-state="error"] { color: #ff5a5f; }
+.hero[data-state="loading"] { color: #bbbbbb; }
+
+.line {
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+.line b { color: #aaaaaa; font-weight: 400; }
+.error { color: #ff8a8d; white-space: normal; font-size: 16px; }

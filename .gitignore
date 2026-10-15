@@ -1,0 +1,23 @@
+# Secrets — la clé Riot ne doit jamais être commitée
+.env
+.env.*
+!.env.example
+
+# Dépendances / build
+node_modules/
+dist/
+coverage/
+
+# Données locales (normalement dans %LOCALAPPDATA%\xeneon-lol, mais au cas où DATA_DIR pointe ici)
+data/
+*.db
+*.db-wal
+*.db-shm
+
+# Paquets de widgets générés
+*.icuewidget
+
+# Divers
+*.log
+.DS_Store
+Thumbs.db

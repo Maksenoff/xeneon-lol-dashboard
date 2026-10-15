@@ -1,0 +1,37 @@
+<!DOCTYPE html>
+<html lang="fr">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>tr('LoL Backend Ping')</title>
+  <link rel="icon" type="image/svg+xml" href="icon.svg" />
+
+  <meta name="x-icue-property" content="apiBaseUrl" data-label="tr('Backend URL')" data-type="textfield" data-default="'http://localhost:3417'" />
+
+  <script type="application/json" id="x-icue-groups">
+    [
+      { "title": "tr('Connection')", "properties": ["apiBaseUrl"] }
+    ]
+  </script>
+
+  <link rel="stylesheet" type="text/css" href="main.css" />
+</head>
+<body style="background:#102040;color:#ffffff;font:20px Arial,sans-serif;margin:0">
+  <main class="root">
+    <div class="steps">
+      <span id="step-html" class="step done">HTML</span>
+      <span id="step-css" class="step">CSS</span>
+      <span id="step-js" class="step">JS</span>
+      <span id="step-icue" class="step">iCUE</span>
+      <span id="step-api" class="step">API</span>
+    </div>
+    <div class="hero" id="status" data-state="loading">PING v0.1.4</div>
+    <div class="line"><b>Backend :</b> <span id="backend">—</span></div>
+    <div class="line"><b>Riot :</b> <span id="riot">—</span></div>
+    <div class="line"><b>Origine :</b> <span id="origin">—</span></div>
+    <div class="line"><b>Taille :</b> <span id="size">—</span></div>
+    <div class="line error" id="errors"></div>
+  </main>
+  <script src="main.js"></script>
+</body>
+</html>
