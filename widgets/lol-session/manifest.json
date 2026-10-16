@@ -1,0 +1,13 @@
+{
+  "author": "Maksenoff",
+  "id": "com.maksenoff.lolsession",
+  "name": "LoL Session",
+  "description": "Session League of Legends : V/D, LP, séries et historique détaillé (backend local, API officielle Riot).",
+  "version": "2.5.0",
+  "preview_icon": "icon.svg",
+  "min_app_version": "5.47",
+  "min_framework_version": "1.0.0",
+  "os": [{ "platform": "windows" }],
+  "supported_devices": [{ "type": "dashboard_lcd", "features": ["sensor-screen"] }],
+  "interactive": true
+}

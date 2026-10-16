@@ -18,6 +18,23 @@ export function absoluteLp(tier: string, division: string, lp: number): number |
   return tierIndex * 400 + div * 100 + lp;
 }
 
+/**
+ * Inverse d'absoluteLp, pour afficher un rang moyen. Au-delà de Diamant I, impossible de distinguer
+ * Master / Grandmaster / Challenger (seuils variables) : on renvoie MASTER.
+ */
+export function rankFromAbsolute(abs: number): { tier: string; division: string; lp: number } {
+  const value = Math.max(0, Math.round(abs));
+  if (value >= APEX_BASE) return { tier: 'MASTER', division: 'I', lp: value - APEX_BASE };
+  const tier = TIERS[Math.floor(value / 400)]!;
+  const div = Math.floor((value % 400) / 100);
+  return { tier, division: ['IV', 'III', 'II', 'I'][div]!, lp: value % 100 };
+}
+
+/** Chemin de l'emblème servi par le backend. */
+export function emblemPath(tier: string): string {
+  return `/api/assets/rank/${tier.toLowerCase()}.png`;
+}
+
 const TIER_FR: Record<string, string> = {
   IRON: 'Fer',
   BRONZE: 'Bronze',

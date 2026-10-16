@@ -1,0 +1,201 @@
+<!DOCTYPE html>
+<html lang="fr">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>tr('LoL Session')</title>
+  <link rel="icon" type="image/svg+xml" href="icon.svg" />
+
+  <meta name="x-icue-property" content="riotAccount" data-label="tr('Riot account (Name#TAG)')" data-type="textfield" data-default="''" />
+  <meta name="x-icue-property" content="apiBaseUrl" data-label="tr('Backend URL')" data-type="textfield" data-default="'http://localhost:3417'" />
+  <meta name="x-icue-property" content="defaultMode" data-label="tr('Default mode')" data-type="combobox" data-default="'rsolo'" data-values="[{'key':'rsolo','value':tr('Ranked Solo/Duo')},{'key':'flex','value':tr('Ranked Flex')},{'key':'normal','value':tr('Normal')},{'key':'aram','value':tr('ARAM')},{'key':'all','value':tr('All queues')}]" />
+  <meta name="x-icue-property" content="defaultPeriod" data-label="tr('Default period')" data-type="combobox" data-default="'session'" data-values="[{'key':'session','value':tr('Session')},{'key':'jour','value':tr('Today')},{'key':'semaine','value':tr('This week')}]" />
+  <meta name="x-icue-property" content="refreshSeconds" data-label="tr('Refresh interval')" data-type="slider" data-default="30" data-min="15" data-max="120" data-step="5" data-unit-label="'s'" />
+  <meta name="x-icue-property" content="autoLiveView" data-label="tr('Switch to live game automatically')" data-type="switch" data-default="true" />
+
+  <meta name="x-icue-property" content="showSplash" data-label="tr('Splash art')" data-type="switch" data-default="true" />
+  <meta name="x-icue-property" content="splashChampion" data-label="tr('Splash champion')" data-type="textfield" data-default="'Vayne'" />
+  <meta name="x-icue-property" content="splashSkin" data-label="tr('Skin number')" data-type="textfield" data-default="'25'" />
+  <meta name="x-icue-property" content="splashFocus" data-label="tr('Horizontal framing')" data-type="slider" data-default="66" data-min="0" data-max="100" data-step="1" data-unit-label="'%'" />
+  <meta name="x-icue-property" content="splashFocusY" data-label="tr('Vertical framing')" data-type="slider" data-default="15" data-min="0" data-max="100" data-step="1" data-unit-label="'%'" />
+  <meta name="x-icue-property" content="splashZoom" data-label="tr('Splash zoom')" data-type="slider" data-default="130" data-min="100" data-max="250" data-step="5" data-unit-label="'%'" />
+  <meta name="x-icue-property" content="splashOpacity" data-label="tr('Splash opacity')" data-type="slider" data-default="75" data-min="10" data-max="100" data-step="5" data-unit-label="'%'" />
+
+  <meta name="x-icue-property" content="textColor" data-label="tr('Text Color')" data-type="color" data-default="'#ffffff'" />
+  <meta name="x-icue-property" content="accentColor" data-label="tr('Accent Color')" data-type="color" data-default="'#d4b06a'" />
+  <meta name="x-icue-property" content="backgroundColor" data-label="tr('Background Color')" data-type="color" data-default="'#070b14'" />
+  <meta name="x-icue-property" content="transparency" data-label="tr('Background Transparency')" data-type="slider" data-default="100" data-min="0" data-max="100" data-step="1" data-unit-label="'%'" />
+
+  <script type="application/json" id="x-icue-groups">
+    [
+      { "title": "tr('LoL Session')", "properties": ["riotAccount", "apiBaseUrl", "defaultMode", "defaultPeriod", "refreshSeconds", "autoLiveView"] },
+      { "title": "tr('Splash art')", "properties": ["showSplash", "splashChampion", "splashSkin", "splashZoom", "splashFocus", "splashFocusY", "splashOpacity"], "info": "tr('Skin numbers: Data Dragon (e.g. Vayne 25 = Sentinel). Vertical framing needs a zoom above 100 %.')" },
+      { "title": "tr('Widget Personalization')", "properties": ["textColor", "accentColor", "backgroundColor", "transparency"] }
+    ]
+  </script>
+
+  <link rel="stylesheet" type="text/css" href="main.css" />
+</head>
+<body>
+  <div class="widget" id="widget" data-view="session" data-state="loading">
+
+    <!-- ===================== Vue session ===================== -->
+    <section class="hero" id="hero">
+      <img class="hero-splash" id="splash" alt="" />
+      <div class="hero-shade"></div>
+      <div class="hero-content">
+        <div class="rank">
+          <div class="emblem-wrap"><img class="emblem" id="emblem" alt="" /></div>
+          <div class="rank-text">
+            <div class="rank-account" id="account-name"></div>
+            <div class="rank-tier" id="rank-tier">—</div>
+            <div class="rank-lp" id="rank-lp"></div>
+            <div class="lp-bar"><div class="lp-fill" id="lp-fill"></div></div>
+            <div class="rank-season" id="rank-season"></div>
+          </div>
+        </div>
+
+        <div class="record">
+          <div class="record-line">
+            <span class="num win" id="wins">0</span><span class="lbl">V</span>
+            <span class="num loss" id="losses">0</span><span class="lbl">D</span>
+          </div>
+          <div class="record-sub" id="hero-sub">—</div>
+        </div>
+
+        <div class="kpis">
+          <div class="kpi" id="kpi-lp">
+            <span class="kpi-label">LP</span>
+            <span class="kpi-value" id="lp-net">—</span>
+            <span class="kpi-foot" id="lp-foot"></span>
+          </div>
+          <div class="kpi" id="kpi-streak">
+            <span class="kpi-label">Série</span>
+            <span class="kpi-value" id="streak-value">—</span>
+            <span class="kpi-foot" id="streak-foot"></span>
+          </div>
+        </div>
+
+        <div class="champs">
+          <span class="section-label">Top champions</span>
+          <div class="champ-list" id="champ-list"></div>
+        </div>
+      </div>
+    </section>
+
+    <section class="board" id="board">
+      <nav class="toolbar">
+        <div class="seg" id="mode-tabs">
+          <button class="seg-btn" data-mode="rsolo">Solo</button>
+          <button class="seg-btn" data-mode="flex">Flex</button>
+          <button class="seg-btn" data-mode="normal">Normal</button>
+          <button class="seg-btn" data-mode="aram">ARAM</button>
+          <button class="seg-btn" data-mode="all">Tout</button>
+        </div>
+        <div class="seg" id="period-tabs">
+          <button class="seg-btn" data-period="session">Session</button>
+          <button class="seg-btn" data-period="jour">Jour</button>
+          <button class="seg-btn" data-period="semaine">Semaine</button>
+        </div>
+        <div class="spacer"></div>
+        <button class="live-btn" id="live-btn" disabled><span class="live-dot"></span><span id="live-btn-text">Pas en partie</span></button>
+        <button class="session-btn" id="session-btn">Démarrer</button>
+      </nav>
+
+      <div class="statbar">
+        <div class="tile kda-tile">
+          <div class="kda-main">
+            <span class="big" id="st-kda">—</span>
+            <span class="tile-label">KDA moyen</span>
+          </div>
+          <div class="kda-split">
+            <div class="kda-col"><span class="v k" id="st-k">—</span><span class="l">Kills</span></div>
+            <span class="slash">/</span>
+            <div class="kda-col"><span class="v d" id="st-d">—</span><span class="l">Morts</span></div>
+            <span class="slash">/</span>
+            <div class="kda-col"><span class="v a" id="st-a">—</span><span class="l">Assists</span></div>
+          </div>
+        </div>
+        <div class="tile cs-tile">
+          <span class="big" id="st-cs">—</span>
+          <span class="tile-label">CS / min</span>
+          <span class="tile-sub" id="st-cs-sub"></span>
+        </div>
+        <div class="tile"><span class="big" id="st-kp">—</span><span class="tile-label">Participation</span></div>
+        <div class="tile opt"><span class="big" id="st-vision">—</span><span class="tile-label">Vision / partie</span></div>
+        <div class="tile opt"><span class="big" id="st-time">—</span><span class="tile-label">Temps de jeu</span></div>
+      </div>
+
+      <div class="history-head">
+        <span class="section-label">Historique</span>
+        <div class="sequence" id="sequence"></div>
+        <span class="status" id="status"><span class="status-dot"></span><span id="status-text">…</span></span>
+      </div>
+
+      <div class="matches" id="matches"></div>
+      <div class="placeholder" id="placeholder"></div>
+    </section>
+
+    <!-- ===================== Vue partie en cours ===================== -->
+    <section class="live" id="live">
+      <header class="live-head">
+        <div class="seg viewswitch">
+          <button class="seg-btn" id="back-btn">Session</button>
+          <button class="seg-btn active"><span class="live-dot"></span> En jeu</button>
+        </div>
+        <div class="live-title">
+          <span class="live-dot"></span>
+          <span id="live-queue">Partie en cours</span>
+          <span class="live-timer" id="live-timer">00:00</span>
+        </div>
+        <div class="live-progress" id="live-progress">
+          <div class="bar"><div class="fill" id="live-fill"></div></div>
+          <span id="live-progress-text"></span>
+        </div>
+        <div class="bans" id="bans"></div>
+      </header>
+      <div class="teams" id="teams"></div>
+    </section>
+
+    <!-- ===================== Fiche champion (top 3) ===================== -->
+    <div class="overlay" id="champ-overlay">
+      <div class="sheet" id="champ-sheet">
+        <img class="sheet-splash" id="sheet-splash" alt="" />
+        <div class="sheet-shade"></div>
+        <header class="sheet-head">
+          <img class="sheet-icon" id="sheet-icon" alt="" />
+          <div class="sheet-title">
+            <div class="sheet-name" id="sheet-name">—</div>
+            <div class="sheet-mastery" id="sheet-mastery"></div>
+          </div>
+          <button class="close-btn" aria-label="Fermer">✕</button>
+        </header>
+        <div class="sheet-grid" id="sheet-grid"></div>
+      </div>
+    </div>
+
+    <!-- ===================== Fiche partie (clic sur une ligne de l'historique) ===================== -->
+    <div class="overlay" id="match-overlay">
+      <div class="sheet wide" id="match-sheet">
+        <header class="msheet-head">
+          <div class="result-badge" id="m-result">—</div>
+          <div class="sheet-title">
+            <div class="msheet-title" id="m-title">Chargement…</div>
+            <div class="msheet-sub" id="m-sub"></div>
+          </div>
+          <div class="mchips" id="m-chips"></div>
+          <div class="duel" id="m-duel"></div>
+          <div class="seg mtabs" id="m-tabs">
+            <button class="seg-btn" data-tab="table">Tableau</button>
+            <button class="seg-btn" data-tab="duels">Duels</button>
+          </div>
+          <button class="close-btn" aria-label="Fermer">✕</button>
+        </header>
+        <div class="mbody" id="m-body"></div>
+      </div>
+    </div>
+  </div>
+
+  <script src="main.js"></script>
+</body>
+</html>

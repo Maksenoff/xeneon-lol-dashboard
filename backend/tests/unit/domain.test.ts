@@ -3,6 +3,15 @@ import { absoluteLp, rankLabel } from '../../src/domain/rank.js';
 import { startOfDay, startOfWeek } from '../../src/domain/periods.js';
 import { computeStreaks } from '../../src/domain/streaks.js';
 import { queuesForMode, queueLabel } from '../../src/domain/queues.js';
+import { formatPoints } from '../../src/services/liveService.js';
+
+describe('formatPoints', () => {
+  it('affiche M au-delà du million, k au-delà de mille', () => {
+    expect(formatPoints(1_919_463)).toBe('1,9 M');
+    expect(formatPoints(950_000)).toBe('950 k');
+    expect(formatPoints(850)).toBe('850');
+  });
+});
 
 describe('absoluteLp', () => {
   it('ordonne les rangs sur une échelle continue', () => {
@@ -63,5 +72,27 @@ describe('files', () => {
     expect(queuesForMode('all')).toBeNull();
     expect(queueLabel(450)).toBe('ARAM');
     expect(queueLabel(9999)).toBe('File 9999');
+  });
+});
+
+import { fillMissingPositions, validPosition } from '../../src/services/matchDetail.js';
+
+describe('rôles « Invalid » renvoyés par Riot', () => {
+  it('ignore les valeurs inconnues', () => {
+    expect(validPosition('Invalid')).toBeNull();
+    expect(validPosition('')).toBeNull();
+    expect(validPosition('BOTTOM')).toBe('BOTTOM');
+  });
+
+  it('complète par élimination le seul rôle libre (cas réel : Vladimir « Invalid » → BOTTOM)', () => {
+    const team = ['TOP', 'JUNGLE', 'MIDDLE', 'UTILITY', null].map((position) => ({ teamId: 200, position }));
+    fillMissingPositions(team);
+    expect(team.map((p) => p.position)).toEqual(['TOP', 'JUNGLE', 'MIDDLE', 'UTILITY', 'BOTTOM']);
+  });
+
+  it('ne devine rien si le compte ne tombe pas juste', () => {
+    const team = ['TOP', 'TOP', 'MIDDLE', null, null].map((position) => ({ teamId: 100, position }));
+    fillMissingPositions(team);
+    expect(team.map((p) => p.position)).toEqual(['TOP', 'TOP', 'MIDDLE', null, null]);
   });
 });

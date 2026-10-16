@@ -7,7 +7,7 @@ export function healthRoutes(deps: AppDeps): FastifyPluginAsync {
   return async (app) => {
     app.get('/health', async () => ({
       ok: true,
-      riotId: `${deps.config.riotId.gameName}#${deps.config.riotId.tagLine}`,
+      riotId: `${deps.accounts.tracked().gameName}#${deps.accounts.tracked().tagLine}`,
       region: deps.config.region,
       platform: deps.config.platform,
       uptimeS: Math.round((Date.now() - startedAt) / 1000),

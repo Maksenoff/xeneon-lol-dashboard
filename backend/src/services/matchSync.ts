@@ -3,6 +3,7 @@ import type { Logger, RiotClient } from '../riot/client.js';
 import { getMatch, getMatchIds } from '../riot/endpoints/match.js';
 import { Priority } from '../riot/rateLimiter.js';
 import type { MatchDto } from '../riot/types.js';
+import { validPosition } from './matchDetail.js';
 
 export interface SyncOptions {
   /** Ne récupère que les parties commencées après cet instant (ms). */
@@ -22,8 +23,9 @@ const DETAIL_CONCURRENCY = 5; // le limiteur lisse de toute façon le débit
 
 /** Récupère l'historique Match-V5 et le stocke (les 10 joueurs de chaque partie). */
 export class MatchSyncService {
-  lastSyncAt = 0;
-  private inflight: Promise<SyncResult> | null = null;
+  /** Dernière synchro réussie, par PUUID (le compte suivi peut changer). */
+  private readonly lastSync = new Map<string, number>();
+  private readonly inflight = new Map<string, Promise<SyncResult>>();
   private readonly hasStmt;
   private readonly insertMatch;
   private readonly insertParticipant;
@@ -57,14 +59,18 @@ export class MatchSyncService {
     return this.lastEndStmt.get(puuid)?.last ?? null;
   }
 
-  /** Synchronise ; deux appels simultanés partagent la même exécution. */
+  lastSyncAt(puuid: string): number {
+    return this.lastSync.get(puuid) ?? 0;
+  }
+
+  /** Synchronise ; deux appels simultanés pour le même compte partagent la même exécution. */
   sync(puuid: string, opts: SyncOptions): Promise<SyncResult> {
-    if (!this.inflight) {
-      this.inflight = this.run(puuid, opts).finally(() => {
-        this.inflight = null;
-      });
+    let running = this.inflight.get(puuid);
+    if (!running) {
+      running = this.run(puuid, opts).finally(() => this.inflight.delete(puuid));
+      this.inflight.set(puuid, running);
     }
-    return this.inflight;
+    return running;
   }
 
   private async run(puuid: string, opts: SyncOptions): Promise<SyncResult> {
@@ -90,7 +96,7 @@ export class MatchSyncService {
       }
     }
 
-    this.lastSyncAt = Date.now();
+    this.lastSync.set(puuid, Date.now());
     if (added > 0) this.logger.info({ checked: ids.length, added }, 'Parties synchronisées');
     return { checked: ids.length, added };
   }
@@ -118,7 +124,8 @@ export class MatchSyncService {
           teamId: p.teamId,
           championId: p.championId,
           championName: p.championName,
-          position: p.teamPosition || p.individualPosition || null,
+          // « Invalid » (rôle indéterminé par Riot) est stocké comme absent.
+          position: validPosition(p.teamPosition) ?? validPosition(p.individualPosition),
           win: p.win ? 1 : 0,
           remake: p.gameEndedInEarlySurrender ? 1 : 0,
           kills: p.kills,

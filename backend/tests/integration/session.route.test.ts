@@ -37,6 +37,9 @@ function fakeRiot() {
       const m = matches.get(matchId);
       return m ? jsonResponse(m) : undefined;
     }
+    if (p.endsWith('/by-champion/67')) {
+      return jsonResponse({ championId: 67, championLevel: 48, championPoints: 912_345, lastPlayTime: T0 });
+    }
     if (p.startsWith('/lol/league/v4/entries/by-puuid/')) {
       return jsonResponse([state.solo, leagueEntry('RANKED_PREMADE_5x5', 'DIAMOND', 'IV', 67, 10, 10)].filter(Boolean));
     }
@@ -60,7 +63,7 @@ describe('Session : /api/session', () => {
     db = openDb(':memory:');
     riot = fakeRiot();
     // Historique antérieur : une classée gagnée ce midi (avant tout snapshot), un ARAM hier.
-    riot.addMatch({ id: 'EUW1_OLDWIN', endedAt: T0 - 6 * 60 * MIN, win: true, champion: 'Jinx' });
+    riot.addMatch({ id: 'EUW1_OLDWIN', endedAt: T0 - 6 * 60 * MIN, win: true, champion: 'Jinx', championId: 222 });
     riot.addMatch({ id: 'EUW1_ARAM', endedAt: T0 - 26 * 60 * MIN, win: false, queueId: 450, champion: 'Lux' });
     ({ app } = await buildApp({ config: testConfig(), db, fetchFn: riot.fetchFn, logger: false }));
   });
@@ -99,7 +102,7 @@ describe('Session : /api/session', () => {
     riot.state.solo = leagueEntry('RANKED_SOLO_5x5', 'EMERALD', 'II', 72, 11, 10);
     advanceTo(T0 + 40 * MIN);
     const s1 = await get('?mode=rsolo&period=session');
-    expect(s1.summary).toMatchObject({ games: 1, wins: 1, losses: 0, winrate: 1, kda: 3.6 });
+    expect(s1.summary).toMatchObject({ games: 1, wins: 1, losses: 0, winrate: 1, kda: 3.6, avgKills: 10, avgDeaths: 5, avgAssists: 8 });
     expect(s1.lp).toEqual({ net: 22, source: 'snapshot', adjustments: 0 });
     expect(s1.matches[0]).toMatchObject({
       matchId: 'EUW1_G1',
@@ -131,6 +134,22 @@ describe('Session : /api/session', () => {
     expect(day.matches.at(-1)).toMatchObject({ matchId: 'EUW1_OLDWIN', lpDelta: 22, lpSource: 'estimated' });
     expect(day.lp).toEqual({ net: 7, source: 'estimated', adjustments: 0 });
 
+    // Top champions : Vayne (3 parties) puis Jinx (1), avec la maîtrise du compte
+    expect(day.topChampions.map((c) => c.champion.name)).toEqual(['Vayne', 'Jinx']);
+    expect(day.topChampions[0]).toMatchObject({
+      games: 3,
+      wins: 1,
+      losses: 2,
+      winrate: 0.333,
+      avgKills: 10,
+      avgCs: 160,
+      lpNet: -15,
+      lpSource: 'estimated',
+      mastery: { level: 48, points: 912_345 },
+    });
+    expect(day.topChampions[1]!.mastery).toBeNull(); // 404 Riot → pas de maîtrise
+    expect(day.summary.avgCs).toBe(160);
+
     // 6) Remake : affiché mais hors W/L et sans LP
     riot.addMatch({ id: 'EUW1_REMAKE', endedAt: T0 + 130 * MIN, win: false, remake: true });
     advanceTo(T0 + 135 * MIN);
@@ -145,12 +164,12 @@ describe('Session : /api/session', () => {
     expect((await get()).session).toBeNull();
   });
 
-  it('filtre par mode : ARAM sans LP ni rang', async () => {
+  it('filtre par mode : ARAM sans LP, rang Solo/Duo en référence', async () => {
     const aram = await get('?mode=aram&period=semaine');
     expect(aram.summary.games).toBe(1);
     expect(aram.matches[0]).toMatchObject({ matchId: 'EUW1_ARAM', queue: 'ARAM', result: 'L', lpDelta: null, lpSource: null });
     expect(aram.lp).toBeNull();
-    expect(aram.rank).toBeNull();
+    expect(aram.rank).toMatchObject({ queueType: 'RANKED_SOLO_5x5', label: 'Émeraude II', emblem: '/api/assets/rank/emerald.png' });
   });
 
   it('mode all : toutes les files', async () => {

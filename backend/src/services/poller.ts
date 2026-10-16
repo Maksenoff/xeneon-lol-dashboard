@@ -9,7 +9,6 @@ export interface PollerDeps {
   accounts: AccountService;
   matches: MatchSyncService;
   ranks: RankSnapshotService;
-  riotId: { gameName: string; tagLine: string };
   logger: Logger;
   intervalMs?: number;
 }
@@ -31,6 +30,11 @@ export class Poller {
     this.timer.unref();
   }
 
+  /** Lance un cycle immédiatement (ex. après un changement de compte suivi). */
+  kick(): void {
+    void this.tick('poll');
+  }
+
   stop(): void {
     if (this.timer) clearInterval(this.timer);
     this.timer = null;
@@ -39,9 +43,9 @@ export class Poller {
   private async tick(trigger: 'startup' | 'poll'): Promise<void> {
     if (this.running) return;
     this.running = true;
-    const { accounts, matches, ranks, riotId, logger } = this.deps;
+    const { accounts, matches, ranks, logger } = this.deps;
     try {
-      const { puuid } = await accounts.me(riotId);
+      const { puuid } = await accounts.me();
       await ranks.capture(puuid, trigger, { priority: Priority.Background });
       const now = Date.now();
       const lastEnd = matches.lastGameEnd(puuid);
