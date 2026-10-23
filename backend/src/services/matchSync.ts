@@ -45,9 +45,9 @@ export class MatchSyncService {
     this.insertParticipant = db.prepare(
       `INSERT OR REPLACE INTO match_participants
        (match_id, puuid, team_id, champion_id, champion_name, position, win, remake, kills, deaths, assists,
-        cs, vision, gold, damage, kill_participation, champ_level, riot_id_name, riot_id_tag)
+        cs, vision, gold, damage, kill_participation, champ_level, riot_id_name, riot_id_tag, solo_kills, epic_steals)
        VALUES (@matchId, @puuid, @teamId, @championId, @championName, @position, @win, @remake, @kills, @deaths,
-        @assists, @cs, @vision, @gold, @damage, @killParticipation, @champLevel, @riotIdName, @riotIdTag)`,
+        @assists, @cs, @vision, @gold, @damage, @killParticipation, @champLevel, @riotIdName, @riotIdTag, @soloKills, @epicSteals)`,
     );
     this.lastEndStmt = db.prepare<[string], { last: number | null }>(
       `SELECT MAX(m.game_end) AS last FROM matches m JOIN match_participants p ON p.match_id = m.match_id WHERE p.puuid = ?`,
@@ -139,6 +139,8 @@ export class MatchSyncService {
           champLevel: p.champLevel ?? null,
           riotIdName: p.riotIdGameName ?? null,
           riotIdTag: p.riotIdTagline ?? null,
+          soloKills: p.challenges?.soloKills ?? null,
+          epicSteals: p.challenges?.epicMonsterSteals ?? null,
         });
       }
     })();

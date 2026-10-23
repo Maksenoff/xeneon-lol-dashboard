@@ -7,12 +7,15 @@ import { getActiveGame, type CurrentGameInfo, type CurrentGameParticipant } from
 import { getLeagueEntries } from '../riot/endpoints/league.js';
 import { getMasteryByChampion, type ChampionMasteryDto } from '../riot/endpoints/mastery.js';
 import { getMatch, getMatchIds } from '../riot/endpoints/match.js';
-import type { LeagueEntryDto } from '../riot/types.js';
+import type { LeagueEntryDto, MatchDto } from '../riot/types.js';
 import type { LiveClient, LiveAllGameData, LivePlayer } from '../liveclient/liveClient.js';
 import type { DataDragon } from '../ddragon/ddragon.js';
 import { RANKED_QUEUE_TYPE, queueLabel, type RankedQueueType } from '../domain/queues.js';
 import { absoluteLp, emblemPath, rankFromAbsolute, rankLabel } from '../domain/rank.js';
 import { computeStreaks, type Result } from '../domain/streaks.js';
+import { computeTags, type Tag } from '../domain/tags.js';
+
+export { formatPoints } from '../domain/tags.js';
 import type { AccountService } from './accountService.js';
 import type { MatchSyncService } from './matchSync.js';
 
@@ -34,7 +37,6 @@ export const RECENT_GAMES = 20;
 const FIRST_WAVE = 5;
 const LEAGUE_TTL_MS = 10 * 60_000;
 
-type Tone = 'strong' | 'weak' | 'info';
 
 export interface LivePlayerView {
   puuid: string | null;
@@ -53,6 +55,8 @@ export interface LivePlayerView {
     losses: number;
     winrate: number | null;
     hotStreak: boolean;
+    veteran: boolean;
+    freshBlood: boolean;
     emblem: string;
   } | null;
   mastery: { level: number; points: number; lastPlayed: string | null } | null;
@@ -66,8 +70,15 @@ export interface LivePlayerView {
     streak: { result: Result; count: number } | null;
     onChampion: { games: number; wins: number; winrate: number | null; kda: number | null } | null;
     mainRole: string | null;
+    /** Moyennes par partie (repères « Meurt souvent », « Duelliste », « Teamfighter »). */
+    avgDeaths: number;
+    avgSoloKills: number | null;
+    avgKillParticipation: number | null;
+    /** Parties récentes jouées en jungle : objectifs épiques volés par lui / volés à son équipe (repère Smite). */
+    jungle: { games: number; steals: number; stolenFrom: number } | null;
   } | null;
-  tags: Array<{ id: string; label: string; tone: Tone }>;
+  /** Repères factuels (cf. domain/tags.ts), calculés une fois les rôles déduits. */
+  tags: Tag[];
   /** Live Client Data (seulement si la partie tourne sur ce PC). */
   live: { kills: number; deaths: number; assists: number; cs: number; level: number } | null;
   loaded: { rank: boolean; mastery: boolean; recent: boolean };
@@ -119,6 +130,8 @@ interface GameState {
   done: number;
   total: number;
   cancelled: boolean;
+  /** Rejeu : historique limité aux parties d'avant cet instant (secondes epoch). */
+  historyEndTime?: number;
 }
 
 interface RecentRow {
@@ -131,6 +144,11 @@ interface RecentRow {
   deaths: number;
   assists: number;
   position: string | null;
+  kill_participation: number | null;
+  solo_kills: number | null;
+  epic_steals: number | null;
+  /** Objectifs épiques volés à son équipe par l'équipe adverse dans cette partie. */
+  stolen_from: number;
 }
 
 export interface LiveServiceDeps {
@@ -165,12 +183,64 @@ export class LiveService {
       return null;
     }
     if (!this.state || this.state.gameId !== info.gameId) this.startGame(info);
-    const live = await this.deps.liveClient.allGameData();
+    // Noms des champions : la vue en jeu ne doit pas dépendre d'un appel préalable à la vue session.
+    const [live] = await Promise.all([this.deps.liveClient.allGameData(), this.deps.ddragon?.ensureLoaded()]);
     return this.view(this.state!, puuid, live);
   }
 
+  /**
+   * DIAGNOSTIC — rejoue une partie déjà terminée et stockée comme si elle était en cours, pour
+   * prévisualiser la vue « partie en cours » et ses repères sur de vrais joueurs.
+   * L'historique de chaque joueur est limité aux parties jouées AVANT celle-ci ; le rang et la
+   * maîtrise sont en revanche les valeurs ACTUELLES (Riot n'en garde pas l'historique).
+   */
+  async replay(matchId: string): Promise<LiveGameView | null> {
+    const row = this.deps.db.prepare<[string], { raw_json: string }>('SELECT raw_json FROM matches WHERE match_id = ?').get(matchId);
+    if (!row) return null;
+    const { puuid } = await this.deps.accounts.me();
+    let state = this.replays.get(matchId);
+    if (!state) {
+      const dto = JSON.parse(row.raw_json) as MatchDto;
+      const info: CurrentGameInfo = {
+        gameId: Number(matchId.split('_')[1]),
+        gameQueueConfigId: dto.info.queueId,
+        gameStartTime: dto.info.gameStartTimestamp,
+        participants: dto.info.participants.map((p) => {
+          const raw = p as unknown as { summoner1Id?: number; summoner2Id?: number };
+          return {
+            puuid: p.puuid,
+            riotId: p.riotIdGameName ? `${p.riotIdGameName}#${p.riotIdTagline ?? ''}` : '',
+            championId: p.championId,
+            teamId: p.teamId,
+            spell1Id: raw.summoner1Id,
+            spell2Id: raw.summoner2Id,
+            bot: false,
+          };
+        }),
+        bannedChampions: ((dto.info as unknown as { teams?: Array<{ teamId: number; bans?: Array<{ championId: number; pickTurn: number }> }> }).teams ?? [])
+          .flatMap((t) => (t.bans ?? []).map((b) => ({ championId: b.championId, teamId: t.teamId, pickTurn: b.pickTurn }))),
+      };
+      state = this.createState(info, Math.floor(dto.info.gameStartTimestamp / 1000));
+      this.replays.set(matchId, state);
+      void this.enrich(state).catch((err) => this.deps.logger.warn({ err: String(err) }, 'Rejeu interrompu'));
+    }
+    await this.deps.ddragon?.ensureLoaded();
+    const view = this.view(state, puuid, null);
+    view.elapsedS = 0;
+    return view;
+  }
+
+  private readonly replays = new Map<string, GameState>();
+
   private startGame(info: CurrentGameInfo): void {
     if (this.state) this.state.cancelled = true;
+    this.state = this.createState(info);
+    this.deps.logger.info({ gameId: info.gameId, players: info.participants.length }, 'Partie en cours détectée');
+    void this.saveDebug(info);
+    void this.enrich(this.state).catch((err) => this.deps.logger.warn({ err: String(err) }, 'Enrichissement interrompu'));
+  }
+
+  private createState(info: CurrentGameInfo, historyEndTime?: number): GameState {
     const players = info.participants.map(
       (p): PlayerState => ({
         p,
@@ -190,11 +260,9 @@ export class LiveService {
       done: 0,
       total: enriched.length * (3 + RECENT_GAMES), // league + maîtrise + ids + détails (au plus)
       cancelled: false,
+      historyEndTime,
     };
-    this.state = state;
-    this.deps.logger.info({ gameId: info.gameId, players: players.length }, 'Partie en cours détectée');
-    void this.saveDebug(info);
-    void this.enrich(state).catch((err) => this.deps.logger.warn({ err: String(err) }, 'Enrichissement interrompu'));
+    return state;
   }
 
   private async enrich(state: GameState): Promise<void> {
@@ -234,7 +302,7 @@ export class LiveService {
     const queue = queueId && RANKED_QUEUE_TYPE[queueId] ? queueId : undefined;
     await Promise.all(
       targets.map(async (s) => {
-        s.recentIds = (await safe(() => getMatchIds(riot, region, s.p.puuid!, { count: RECENT_GAMES, queue }, Priority.Live))) ?? [];
+        s.recentIds = (await safe(() => getMatchIds(riot, region, s.p.puuid!, { count: RECENT_GAMES, queue, endTime: state.historyEndTime }, Priority.Live))) ?? [];
         tick();
         // Les parties absentes de la liste ne seront jamais téléchargées : on les compte comme faites.
         tick(RECENT_GAMES - s.recentIds.length);
@@ -274,6 +342,7 @@ export class LiveService {
       .map((teamId): LiveTeamView => {
         const idx = state.players.map((s, i) => (s.p.teamId === teamId ? i : -1)).filter((i) => i >= 0);
         this.assignPositions(idx.map((i) => state.players[i]!), idx.map((i) => players[i]!), live);
+        for (const i of idx) players[i]!.tags = tagsFor(players[i]!);
         const members = idx.map((i) => players[i]!).sort((a, b) => roleIndex(a.position) - roleIndex(b.position));
         const ranked = members.map((m) => m.rank).filter((r): r is NonNullable<typeof r> => !!r);
         const abs = ranked.map((r) => absoluteLp(r.tier, r.division, r.lp)).filter((v): v is number => v !== null);
@@ -325,6 +394,8 @@ export class LiveService {
           losses: entry.losses,
           winrate: entry.wins + entry.losses ? round(entry.wins / (entry.wins + entry.losses), 3) : null,
           hotStreak: !!entry.hotStreak,
+          veteran: !!entry.veteran,
+          freshBlood: !!entry.freshBlood,
           emblem: emblemPath(entry.tier),
         }
       : null;
@@ -354,7 +425,6 @@ export class LiveService {
       position: null,
       positionSource: null,
     };
-    view.tags = computeTags(view, s.masteryLoaded);
     return view;
   }
 
@@ -412,11 +482,16 @@ export class LiveService {
   }
 
   private recentStats(puuid: string, ids: string[], championId: number): LivePlayerView['recent'] {
-    if (!ids.length) return { games: 0, wins: 0, winrate: null, last5: [], streak: null, onChampion: null, mainRole: null };
+    if (!ids.length) {
+      return { games: 0, wins: 0, winrate: null, last5: [], streak: null, onChampion: null, mainRole: null, avgDeaths: 0, avgSoloKills: null, avgKillParticipation: null, jungle: null };
+    }
     const placeholders = ids.map(() => '?').join(',');
     const rows = this.deps.db
       .prepare<string[], RecentRow>(
-        `SELECT m.match_id, m.game_end, p.win, p.remake, p.champion_id, p.kills, p.deaths, p.assists, p.position
+        `SELECT m.match_id, m.game_end, p.win, p.remake, p.champion_id, p.kills, p.deaths, p.assists, p.position,
+                p.kill_participation, p.solo_kills, p.epic_steals,
+                (SELECT COALESCE(SUM(o.epic_steals), 0) FROM match_participants o
+                  WHERE o.match_id = p.match_id AND o.team_id != p.team_id) AS stolen_from
          FROM match_participants p JOIN matches m ON m.match_id = p.match_id
          WHERE p.puuid = ? AND m.match_id IN (${placeholders}) ORDER BY m.game_end DESC`,
       )
@@ -432,6 +507,10 @@ export class LiveService {
     const roles = new Map<string, number>();
     for (const r of rows) if (r.position) roles.set(r.position, (roles.get(r.position) ?? 0) + 1);
     const mainRole = [...roles.entries()].sort((a, b) => b[1] - a[1])[0]?.[0] ?? null;
+    const avg = (values: number[]) => (values.length ? round(values.reduce((a, b) => a + b, 0) / values.length, 2) : null);
+    const solo = rows.map((r) => r.solo_kills).filter((v): v is number => v !== null);
+    const kps = rows.map((r) => r.kill_participation).filter((v): v is number => v !== null);
+    const jungleRows = rows.filter((r) => r.position === 'JUNGLE');
 
     return {
       games: rows.length,
@@ -448,6 +527,16 @@ export class LiveService {
           }
         : null,
       mainRole,
+      avgDeaths: avg(rows.map((r) => r.deaths)) ?? 0,
+      avgSoloKills: avg(solo),
+      avgKillParticipation: avg(kps),
+      jungle: jungleRows.length
+        ? {
+            games: jungleRows.length,
+            steals: jungleRows.reduce((t, r) => t + (r.epic_steals ?? 0), 0),
+            stolenFrom: jungleRows.reduce((t, r) => t + r.stolen_from, 0),
+          }
+        : null,
     };
   }
 
@@ -474,11 +563,18 @@ function roleIndex(position: string | null): number {
   return i < 0 ? POSITIONS.length : i;
 }
 
-/** 1 919 463 → « 1,9 M » ; 950 000 → « 950 k ». */
-export function formatPoints(points: number): string {
-  if (points >= 1_000_000) return `${(points / 1_000_000).toFixed(1).replace('.', ',')} M`;
-  if (points >= 1_000) return `${Math.round(points / 1_000)} k`;
-  return String(points);
+
+/** Entrées du calcul des repères à partir de la vue d'un joueur. */
+function tagsFor(v: LivePlayerView): Tag[] {
+  return computeTags({
+    isPlayer: !v.bot && !!v.puuid,
+    championName: v.champion.name,
+    rank: v.rank,
+    masteryLoaded: v.loaded.mastery,
+    masteryPoints: v.mastery ? v.mastery.points : null,
+    recent: v.recent,
+    position: v.position,
+  });
 }
 
 /** Ligne Live Client d'un joueur Spectator (même Riot ID). */
@@ -507,37 +603,6 @@ function liveScores(live: LiveAllGameData | null, p: CurrentGameParticipant, rio
     cs: lp.scores?.creepScore ?? 0,
     level: lp.level ?? 0,
   };
-}
-
-/** Repères « Porofessor-like », factuels et calculés uniquement à partir des données Riot. */
-export function computeTags(v: LivePlayerView, masteryLoaded: boolean): LivePlayerView['tags'] {
-  const tags: LivePlayerView['tags'] = [];
-  const r = v.recent;
-  if (r?.streak && r.streak.count >= 3) {
-    tags.push(
-      r.streak.result === 'W'
-        ? { id: 'win_streak', label: `${r.streak.count} V d'affilée`, tone: 'strong' }
-        : { id: 'loss_streak', label: `${r.streak.count} D d'affilée`, tone: 'weak' },
-    );
-  } else if (v.rank?.hotStreak) {
-    tags.push({ id: 'hot_streak', label: 'En série', tone: 'strong' });
-  }
-  if (v.mastery && v.mastery.points >= 300_000) {
-    tags.push({ id: 'otp', label: `OTP · ${formatPoints(v.mastery.points)}`, tone: 'strong' });
-  } else if (r?.onChampion && r.games >= 8 && r.onChampion.games / r.games >= 0.5) {
-    tags.push({ id: 'main', label: 'Spécialiste', tone: 'strong' });
-  } else if (masteryLoaded && (!v.mastery || v.mastery.points < 5_000) && !v.bot && v.puuid) {
-    tags.push({ id: 'new_champ', label: 'Peu joué', tone: 'weak' });
-  }
-  if (r?.onChampion && r.onChampion.games >= 5 && r.onChampion.winrate !== null) {
-    if (r.onChampion.winrate >= 0.65) tags.push({ id: 'champ_wr_high', label: `WR champ ${Math.round(r.onChampion.winrate * 100)} %`, tone: 'strong' });
-    else if (r.onChampion.winrate <= 0.35) tags.push({ id: 'champ_wr_low', label: `WR champ ${Math.round(r.onChampion.winrate * 100)} %`, tone: 'weak' });
-  }
-  if (r && r.games >= 10 && r.winrate !== null && !tags.some((t) => t.id.endsWith('streak'))) {
-    if (r.winrate >= 0.65) tags.push({ id: 'in_form', label: 'En forme', tone: 'strong' });
-    else if (r.winrate <= 0.35) tags.push({ id: 'struggling', label: 'En difficulté', tone: 'weak' });
-  }
-  return tags.slice(0, 3);
 }
 
 function round(v: number, digits: number): number {

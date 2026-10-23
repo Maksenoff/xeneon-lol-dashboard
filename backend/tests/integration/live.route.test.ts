@@ -145,7 +145,10 @@ describe('GET /api/live', () => {
     expect(me.mastery).toMatchObject({ level: 50, points: 950_000 });
     expect(me.recent).toMatchObject({ games: 3, wins: 0, last5: ['L', 'L', 'L'], streak: { result: 'L', count: 3 } });
     expect(me.live).toEqual({ kills: 2, deaths: 0, assists: 1, cs: 48, level: 6 });
-    expect(me.tags.map((t) => t.id)).toEqual(['loss_streak', 'otp']);
+    // 3 parties seulement : pas assez pour « OTP » (8+ parties, 65 % sur le champion)
+    expect(me.tags.map((t) => t.id)).toEqual(['loss_streak']);
+    expect(me.tags[0]).toMatchObject({ title: 'Série de défaites', hint: '3 défaites de suite sur ses dernières parties' });
+    expect(me.tags[0]!.explain.length).toBeGreaterThan(20);
 
     const enemies = g.teams[1]!.players;
     const p0 = enemies.find((p) => p.puuid === 'P0')!;
@@ -157,7 +160,7 @@ describe('GET /api/live', () => {
     expect(enemies.find((p) => p.puuid === 'P1')!.rank).toBeNull(); // non classé
     const p2 = enemies.find((p) => p.puuid === 'P2')!;
     expect(p2.mastery).toBeNull();
-    expect(p2.tags.map((t) => t.id)).toContain('new_champ');
+    expect(p2.tags.map((t) => t.id)).toContain('first_time'); // jamais joué (404 maîtrise)
 
     const hidden = g.teams[0]!.players.find((p) => p.puuid === null)!;
     expect(hidden).toMatchObject({ riotId: 'Joueur masqué', rank: null, recent: null, tags: [] });
@@ -171,7 +174,6 @@ describe('GET /api/live', () => {
     expect(me).toMatchObject({ position: 'BOTTOM', positionSource: 'inferred' }); // historique : ADC
     expect(p0.position).toBe('BOTTOM');
     expect(enemies.find((p) => p.puuid === 'P1')!.position).toBe('JUNGLE'); // Châtiment
-    expect(me.tags.find((t) => t.id === 'otp')!.label).toBe('OTP · 950 k');
   });
 
   it('repasse à null quand la partie se termine', async () => {

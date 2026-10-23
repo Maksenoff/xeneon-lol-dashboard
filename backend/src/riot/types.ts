@@ -23,7 +23,7 @@ export interface ParticipantDto {
   gameEndedInEarlySurrender?: boolean;
   riotIdGameName?: string;
   riotIdTagline?: string;
-  challenges?: { killParticipation?: number };
+  challenges?: { killParticipation?: number; soloKills?: number; epicMonsterSteals?: number };
 }
 
 export interface MatchDto {
@@ -49,4 +49,6 @@ export interface LeagueEntryDto {
   wins: number;
   losses: number;
   hotStreak?: boolean;
+  veteran?: boolean;
+  freshBlood?: boolean;
 }

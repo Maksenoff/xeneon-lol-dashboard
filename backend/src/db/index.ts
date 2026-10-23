@@ -24,7 +24,9 @@ export function migrate(db: Db): void {
   const current = db.pragma('user_version', { simple: true }) as number;
   for (let v = current; v < migrations.length; v++) {
     db.transaction(() => {
-      db.exec(migrations[v]!);
+      const migration = migrations[v]!;
+      if (typeof migration === 'string') db.exec(migration);
+      else migration(db);
       db.pragma(`user_version = ${v + 1}`);
     })();
   }

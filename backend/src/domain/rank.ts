@@ -48,6 +48,11 @@ const TIER_FR: Record<string, string> = {
   CHALLENGER: 'Challenger',
 };
 
+/** Nom français du palier seul : « Émeraude », « Maître »… */
+export function tierLabel(tier: string): string {
+  return TIER_FR[tier.toUpperCase()] ?? tier;
+}
+
 /** « Émeraude II », ou « Maître » pour l'apex. */
 export function rankLabel(tier: string, division: string): string {
   const t = tier.toUpperCase();

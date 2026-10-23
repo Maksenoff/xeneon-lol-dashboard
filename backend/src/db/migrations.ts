@@ -3,7 +3,12 @@
  * Ne jamais modifier une migration déjà appliquée : en ajouter une nouvelle.
  * (Gardées en TS plutôt qu'en .sql pour ne pas avoir à copier de fichiers au build.)
  */
-export const migrations: string[] = [
+import type { Db } from './index.js';
+
+/** Une migration est du SQL, ou une fonction quand il faut lire du JSON (backfill). */
+export type Migration = string | ((db: Db) => void);
+
+export const migrations: Migration[] = [
   // 1 — socle : réglages, comptes, cache HTTP Riot
   `
   CREATE TABLE settings (
@@ -88,4 +93,19 @@ export const migrations: string[] = [
     ended_at   INTEGER
   );
   `,
+
+  // 3 — solo kills et objectifs épiques volés par joueur (repères Duelliste et Smite),
+  //     remplis pour les parties déjà stockées à partir du JSON brut (une lecture par partie).
+  //     `.all()` et non `.iterate()` : better-sqlite3 interdit d'écrire pendant qu'un curseur est ouvert.
+  (db) => {
+    db.exec('ALTER TABLE match_participants ADD COLUMN solo_kills INTEGER');
+    db.exec('ALTER TABLE match_participants ADD COLUMN epic_steals INTEGER');
+    const update = db.prepare('UPDATE match_participants SET solo_kills = ?, epic_steals = ? WHERE match_id = ? AND puuid = ?');
+    for (const row of db.prepare<[], { match_id: string; raw_json: string }>('SELECT match_id, raw_json FROM matches').all()) {
+      const dto = JSON.parse(row.raw_json) as { info?: { participants?: Array<{ puuid: string; challenges?: { soloKills?: number; epicMonsterSteals?: number } }> } };
+      for (const p of dto.info?.participants ?? []) {
+        update.run(p.challenges?.soloKills ?? null, p.challenges?.epicMonsterSteals ?? null, row.match_id, p.puuid);
+      }
+    }
+  },
 ];

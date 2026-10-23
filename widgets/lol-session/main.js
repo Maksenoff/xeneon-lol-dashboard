@@ -1123,7 +1123,7 @@ function playerRow(p) {
 
   // Repères (série, OTP, découverte du champion…)
   var tags = el('div', 'tags');
-  p.tags.forEach(function (t) { tags.appendChild(el('span', 'tag ' + t.tone, t.label)); });
+  p.tags.forEach(function (t) { tags.appendChild(tagChip(t)); }); // cf. tags.js
   row.appendChild(tags);
   return row;
 }
@@ -1246,6 +1246,7 @@ $('session-btn').addEventListener('click', onSessionClick);
 $('live-btn').addEventListener('click', showLiveView);
 $('back-btn').addEventListener('click', showSessionView);
 $('champ-list').addEventListener('click', onChampionClick);
+enableTagInfo($('teams'), $('widget')); // bulle d'explication des repères (tags.js)
 $('champ-overlay').addEventListener('click', closeOverlay);
 $('match-overlay').addEventListener('click', closeOverlay);
 $('match-sheet').addEventListener('click', onMatchSheetClick);
